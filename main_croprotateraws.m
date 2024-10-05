@@ -16,12 +16,9 @@
 % Robin Scales for help professionalising the code
 
 %% Checking Computer
-if ~ispc == true
-    warning('This code was written on a Windows PC. Differences may occur.')
-end
-if isMATLABReleaseOlderThan('R2019a') == true
-    warning('This code was written using MATLAB R2019.')
-end
+% Checks whether the computer and MATLAB version are the same as that this
+% code was developed for. Will only print out warnings. Added by RJS.
+checkVersion;
 
 %% Import Functions
 % This adds all the functions required automatically if they are in the 
@@ -35,6 +32,8 @@ folder = fileparts(which(mfilename));
 % Add that folder plus all subfolders to the path.
 addpath(genpath(folder));
 
+% RJS: Done to also add in files in the current directory
+addpath(genpath(cd));
 
 %%  USER INPUTS
 
