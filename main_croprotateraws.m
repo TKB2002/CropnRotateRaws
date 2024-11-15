@@ -15,11 +15,6 @@
 % idea, Marcus Williamson for the idea to use MATLAB rather then ImageJ and
 % Robin Scales for help professionalising the code
 
-%% Checking Computer
-% Checks whether the computer and MATLAB version are the same as that this
-% code was developed for. Will only print out warnings. Added by RJS.
-checkVersion;
-
 %% Import Functions
 % This adds all the functions required automatically if they are in the 
 % same folder as done in the word Doc
@@ -34,6 +29,13 @@ addpath(genpath(folder));
 
 % RJS: Done to also add in files in the current directory
 addpath(genpath(cd));
+
+%% Checking Computer
+% Checks whether the computer and MATLAB version are the same as that this
+% code was developed for. Will only print out warnings. Added by RJS.
+checkVersion;
+
+
 
 %%  USER INPUTS
 
@@ -70,7 +72,7 @@ Boarder = false; % (true = has a boarder, false = no boarder);
 % Is their zShift in your sample?
 Shift = true; % (true = their is a shift, false = no shift)
 
-Normilzer = true
+Normilzer = true;
 zShiftBinning = 1;
 
 % Step 2.4
@@ -180,7 +182,7 @@ if Shift == true
     for i = 2:LoadStepsCount
         tic
         fprintf('z Shift of Sample %d \n',i)
-        [zShift(i),zShiftError(i)] = zshift(Matrix{1,1},Matrix{1,i},zShiftBinning,Normalizer); % Calculate zShift with novel function, standard deviation energy reduction meathod
+        [zShift(i),zShiftError(i)] = zshift(Matrix{1},Matrix{i},zShiftBinning,Normilzer); % Calculate zShift with novel function, standard deviation energy reduction meathod
         ProcessTimes(i) = toc; % Calculate time needed to run
         PlotProgress(i-1,LoadStepsCount-1,'zShift Progress',50)
     end
@@ -218,7 +220,7 @@ if and(Rotation,Method) == true
             % sample 1.
             % Exporting the rotation properties (RB) and quality of fit
             % (2D-Residual and SSIM)
-            [RB{i},MeanResI(i),MeanResF(i),SSIMi(i),SSIMf(i)] = TwoDRigidBodyRemoverAffine(Matrix{ScansPerLoadStep,1},Matrix{ScansPerLoadStep,i},zShift(i)); 
+            [RB{i},MeanResI(i),MeanResF(i),SSIMi(i),SSIMf(i)] = TwoDRigidBodyRemoverAffine(Matrix{1},Matrix{i},zShift(i)); 
             
             % Breaking down the Rotation Matrix
             Affine11(i) = RB{i}.T(1,1);
@@ -253,6 +255,10 @@ if and(Rotation,~Method) == true
     SSIMf = nan(LoadStepsCount,1);
     RotationPassed = nan(LoadStepsCount,1);
     RB = cell(LoadStepsCount,1);
+    
+    RotaationAngle(1) = 0;
+    xShift(1) = 0;
+    yShift(1) = 0;
 
     for i = 2:length(Files)
         try
@@ -261,7 +267,7 @@ if and(Rotation,~Method) == true
             % sample 1.
             % Exporting the rotation properties (RB) and quality of fit
             % (2D-Residual and SSIM)
-            [RB{i},MeanResI(i),MeanResF(i),SSIMi(i),SSIMf(i)] = TwoDRigidBodyRemoverRigid(Matrix{ScansPerLoadStep,1},Matrix{ScansPerLoadStep,i},zShift(i));
+            [RB{i},MeanResI(i),MeanResF(i),SSIMi(i),SSIMf(i)] = TwoDRigidBodyRemoverRigid(Matrix{1},Matrix{i},zShift(i));
             
             % Breaking down the Rotation Matrix
             xShift(i) = RB{i}.T(3,1);
@@ -306,7 +312,9 @@ if Rotation == true % Where user has selected their is rotation
     if RotationPassed(i) == true % Where rotation has worked
         for i = 2:length(Matrix)
             try
-                MatrixRotated{i} = RotateAndCropMatrix(Matrix{i},RB{i},min(zShift),max(zShift),zShift(i)); % Using rotation properties to rotate Matrix
+                MatrixRotated{i} = RotateAndCropMatrix(Matrix{i},RB{i},min(zShift),max(zShift),zShift(i),16); % Using rotation properties to rotate Matrix
+                PlotProgress(i-1,LoadStepsCount-1,'Rotation Progress',50)
+                clear Matrix{i}
             catch
                 fprintf('xy rotation failed on sample %i\n', i )
                 continue
@@ -316,7 +324,8 @@ if Rotation == true % Where user has selected their is rotation
 else
     for i = 2:length(Matrix)
         try
-            MatrixRotated{i} = CropMatrix(Matrix{i},min(zShift),max(zShift),zShift(i)); % z-cropping sample so the start of the sample matches up
+            MatrixRotated{i} = CropMatrix(Matrix{i,1},min(zShift),max(zShift),zShift(i)); % z-cropping sample so the start of the sample matches up
+            clear Matrix{i}
         catch
             fprintf('Shift failed on sample %i\n', i )
             continue
@@ -340,12 +349,13 @@ for i = 2:length(Matrix)
         SaveFile{i} = strcat(SavePath,'\Cropped+Rotated ',Files{i}); % Saving files at the User Selected File Directory with characters 'Cropped+Rotated' added
         SaveFileID{i} = fopen(SaveFile{i},'w+');
         if i8 == true
-            fwrite(SaveFileID{i},reshape(MatrixRotated{i},1,[]),'uint8');
+            fwrite(SaveFileID{i},reshape(uint8(MatrixRotated{i}),1,[]),'uint8');
         end
         if i16 == true
-            fwrite(SaveFileID{i},reshape(MatrixRotated{i},1,[]),'uint16');
+            fwrite(SaveFileID{i},reshape(uint16(MatrixRotated{i}),1,[]),'uint16');
         end
         fclose(SaveFileID{i});
+        PlotProgress(i-1,LoadStepsCount-1,'Saving Progress',50)
     end
 end
 
@@ -359,10 +369,10 @@ if ResidualQ == true % Of user selected option for Residual Calulcation is on
     % Initalising
     Residual = cell(length(Matrix),1);
 
-    if RotationPassed(i) == true
-        for i = 1:length(Matrix)
+    for i = 1:length(Matrix)
+        if RotationPassed(i) == true     
             Residual{i} = ResidualCalculator(MatrixRotated{1},MatrixRotated{i});
-            fprintf('xy rotation failed on sample %i\n', i )
+            PlotProgress(i-1,LoadStepsCount-1,'Resdiual Calculation Progress',50)
         end
     end
 end
@@ -391,6 +401,7 @@ if ResidualQ == true
                 fwrite(ResSaveFileID{i},reshape(Residual{i},1,[]),'uint16');
             end
             fclose(ResSaveFileID{i});
+            PlotProgress(i-1,LoadStepsCount-1,'Residual Saving Progress',50)
         end
     end
 end
