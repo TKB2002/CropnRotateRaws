@@ -87,6 +87,10 @@ Method = false; % (true = affine warping, false = rigid warping)
 % Calculate and save Residual?
 ResidualQ = true;
 
+% Step 4
+% Clear Inital Volume from RAM after rotation
+Clear = true;
+
 %% Select files to import
 % Can be replaced with file directories for further automation
 
@@ -133,9 +137,11 @@ for j = 1:LoadStepsCount
     if i16 == true
         Volume{j} = fread(OpenedFiles{j},xdim*ydim*zdim,'uint16'); % Read the .raw data into RAM
         Matrix{j} = uint16(reshape(Volume{j},xdim,ydim,[])); % Format the .raw data into Matrix form
+        Volume{j} = [];
     elseif i8 == true
         Volume{j} = fread(OpenedFiles{j},xdim*ydim*zdim,'uint8'); % Read the .raw data into RAM
         Matrix{j} = uint8(reshape(Volume{j},xdim,ydim,[])); % Format the .raw data into Matrix form
+        Volume{j} = [];
     end
 
     %Cropping Sample
@@ -300,98 +306,209 @@ end
 
 
 %% Rotate Matrices
-
-% Clearing necessary variable names
-clear MatrixRotated
-
-% Initalising
-MatrixRotated = cell(LoadStepsCount,1);
-
-
-if Rotation == true % Where user has selected their is rotation
-    if RotationPassed(i) == true % Where rotation has worked
+if Clear == false
+    % Clearing necessary variable names
+    clear MatrixRotated
+    
+    % Initalising
+    MatrixRotated = cell(LoadStepsCount,1);
+    
+    
+    if Rotation == true % Where user has selected their is rotation
+        if RotationPassed(i) == true % Where rotation has worked
+            for i = 2:length(Matrix)
+                try
+                    MatrixRotated{i} = RotateAndCropMatrix(Matrix{i},RB{i},min(zShift),max(zShift),zShift(i),16); % Using rotation properties to rotate Matrix
+                    PlotProgress(i-1,LoadStepsCount-1,'Rotation Progress',50)
+                catch
+                    fprintf('xy rotation failed on sample %i\n', i )
+                    continue
+                end
+            end
+        end
+    else
         for i = 2:length(Matrix)
             try
-                MatrixRotated{i} = RotateAndCropMatrix(Matrix{i},RB{i},min(zShift),max(zShift),zShift(i),16); % Using rotation properties to rotate Matrix
-                PlotProgress(i-1,LoadStepsCount-1,'Rotation Progress',50)
-                clear Matrix{i}
+                MatrixRotated{i} = CropMatrix(Matrix{i,1},min(zShift),max(zShift),zShift(i)); % z-cropping sample so the start of the sample matches up
             catch
-                fprintf('xy rotation failed on sample %i\n', i )
+                fprintf('Shift failed on sample %i\n', i )
                 continue
             end
         end
     end
-else
-    for i = 2:length(Matrix)
-        try
-            MatrixRotated{i} = CropMatrix(Matrix{i,1},min(zShift),max(zShift),zShift(i)); % z-cropping sample so the start of the sample matches up
-            clear Matrix{i}
-        catch
-            fprintf('Shift failed on sample %i\n', i )
-            continue
-        end
-    end
+    
+    MatrixRotated{1} = Matrix{1}(:,:,(1-min(zShift)):(zdim-max(zShift))); % Cropping loadstep 1
 end
-
-MatrixRotated{1} = Matrix{1}(:,:,(1-min(zShift)):(zdim-max(zShift))); % Cropping loadstep 1
 %% Save Rotated Matrices
-
-% Clearing necessary variable names
-clear SaveFile
-clear SaveFileID
-
-% Initalising
-SaveFile = cell(length(Matrix),1);
-SaveFileID = cell(length(Matrix),1);
-
-for i = 2:length(Matrix)
-    if RotationPassed(i) == true % Where rotation has worked
-        SaveFile{i} = strcat(SavePath,'\Cropped+Rotated ',Files{i}); % Saving files at the User Selected File Directory with characters 'Cropped+Rotated' added
-        SaveFileID{i} = fopen(SaveFile{i},'w+');
-        if i8 == true
-            fwrite(SaveFileID{i},reshape(uint8(MatrixRotated{i}),1,[]),'uint8');
-        end
-        if i16 == true
-            fwrite(SaveFileID{i},reshape(uint16(MatrixRotated{i}),1,[]),'uint16');
-        end
-        fclose(SaveFileID{i});
-        PlotProgress(i-1,LoadStepsCount-1,'Saving Progress',50)
-    end
-end
-
-%% Calculate Residuals
-
-if ResidualQ == true % Of user selected option for Residual Calulcation is on
-
+if Clear == false
     % Clearing necessary variable names
-    clear Residual
-
+    clear SaveFile
+    clear SaveFileID
+    
     % Initalising
-    Residual = cell(length(Matrix),1);
-
-    for i = 1:length(Matrix)
-        if RotationPassed(i) == true     
-            Residual{i} = ResidualCalculator(MatrixRotated{1},MatrixRotated{i});
-            PlotProgress(i-1,LoadStepsCount-1,'Resdiual Calculation Progress',50)
+    SaveFile = cell(length(Matrix),1);
+    SaveFileID = cell(length(Matrix),1);
+    
+    for i = 2:length(Matrix)
+        if RotationPassed(i) == true % Where rotation has worked
+            SaveFile{i} = strcat(SavePath,'\Cropped+Rotated ',Files{i}); % Saving files at the User Selected File Directory with characters 'Cropped+Rotated' added
+            SaveFileID{i} = fopen(SaveFile{i},'w+');
+            if i8 == true
+                fwrite(SaveFileID{i},reshape(uint8(MatrixRotated{i}),1,[]),'uint8');
+            end
+            if i16 == true
+                fwrite(SaveFileID{i},reshape(uint16(MatrixRotated{i}),1,[]),'uint16');
+            end
+            fclose(SaveFileID{i});
+            PlotProgress(i-1,LoadStepsCount-1,'Saving Progress',50)
         end
     end
 end
-
+%% Calculate Residuals
+if Clear == false
+    if ResidualQ == true % Of user selected option for Residual Calulcation is on
+    
+        % Clearing necessary variable names
+        clear Residual
+    
+        % Initalising
+        Residual = cell(length(Matrix),1);
+    
+        for i = 1:length(Matrix)
+            if RotationPassed(i) == true     
+                Residual{i} = ResidualCalculator(MatrixRotated{1},MatrixRotated{i});
+                PlotProgress(i-1,LoadStepsCount-1,'Resdiual Calculation Progress',50)
+            end
+        end
+    end
+end
 %% Save Residuals
 % Save Residual to file
-if ResidualQ == true
+if Clear == false
+    if ResidualQ == true
+    
+        % Clearing necessary variable names    
+        clear ResSaveFile
+        clear ResSaveFileID
+    
+        % Initalising
+        ResSaveFile = cell(length(Matrix),1);
+        ResSaveFileID = cell(length(Matrix),1);
+    
+        for i = 2:length(Matrix)
+            if RotationPassed(i) == true
+    
+                ResSaveFile{i} = strcat(ResSavePath,'\Residual ',Files{i});  % Saving files at the User Selected File Directory with characters 'Residual' added
+                ResSaveFileID{i} = fopen(ResSaveFile{i},'w+');
+                if i8 == true
+                    fwrite(ResSaveFileID{i},reshape(Residual{i},1,[]),'uint8');
+                end
+                if i16 == true
+                    fwrite(ResSaveFileID{i},reshape(Residual{i},1,[]),'uint16');
+                end
+                fclose(ResSaveFileID{i});
+                PlotProgress(i-1,LoadStepsCount-1,'Residual Saving Progress',50)
+            end
+        end
+    end
+    
+    fprintf('Code finished!\nTotal run time %.2f\n', toc(tic_start)); % Display the total time taken
+end
 
-    % Clearing necessary variable names    
+%% Post processing for Memory Efficency
+if Clear == true
+    % Clearing necessary variable names
+    clear MatrixRotated
+    clear SaveFile
+    clear SaveFileID
+    clear Residual
     clear ResSaveFile
-    clear ResSaveFileID
-
+    clear ResSaveFileID    
     % Initalising
+    MatrixRotated = cell(LoadStepsCount,1);
+    SaveFile = cell(length(Matrix),1);
+    SaveFileID = cell(length(Matrix),1); 
+    Residual = cell(length(Matrix),1);
     ResSaveFile = cell(length(Matrix),1);
     ResSaveFileID = cell(length(Matrix),1);
 
-    for i = 2:length(Matrix)
-        if RotationPassed(i) == true
+    % Initalising
+   
+    MatrixRotated{1} = Matrix{1}(:,:,(1-min(zShift)):(zdim-max(zShift))); % z Cropping loadstep 1
+    SaveFile{1} = strcat(SavePath,'\Cropped+Rotated ',Files{1}); % Saving files at the User Selected File Directory with characters 'Cropped+Rotated' added
+    SaveFileID{1} = fopen(SaveFile{1},'w+');
+    if i8 == true
+        fwrite(SaveFileID{1},reshape(uint8(MatrixRotated{1}),1,[]),'uint8');
+    end
+    if i16 == true
+        fwrite(SaveFileID{1},reshape(uint16(MatrixRotated{1}),1,[]),'uint16');
+    end
+    fclose(SaveFileID{1});
+    
 
+           
+
+    if Rotation == true % Where user has selected their is rotation
+        if RotationPassed(i) == true % Where rotation has worked
+            for i = 2:length(Matrix)
+                % Rotate Matrix
+                try
+                    MatrixRotated{i} = RotateAndCropMatrix(Matrix{i},RB{i},min(zShift),max(zShift),zShift(i),16); % Using rotation properties to rotate Matrix
+                    
+                catch
+                    fprintf('xy rotation failed on sample %i\n', i )
+                    continue
+                end
+                % Save Rotated Files
+                SaveFile{i} = strcat(SavePath,'\Cropped+Rotated ',Files{i}); % Saving files at the User Selected File Directory with characters 'Cropped+Rotated' added
+                SaveFileID{i} = fopen(SaveFile{i},'w+');
+                if i8 == true
+                    fwrite(SaveFileID{i},reshape(uint8(MatrixRotated{i}),1,[]),'uint8');
+                end
+                if i16 == true
+                    fwrite(SaveFileID{i},reshape(uint16(MatrixRotated{i}),1,[]),'uint16');
+                end
+                fclose(SaveFileID{i});
+
+                %Calculate Residuals    
+                Residual{i} = ResidualCalculator(MatrixRotated{1},MatrixRotated{i});
+
+                %Save Residual Files
+                ResSaveFile{i} = strcat(ResSavePath,'\Residual ',Files{i});  % Saving files at the User Selected File Directory with characters 'Residual' added
+                ResSaveFileID{i} = fopen(ResSaveFile{i},'w+');
+                if i8 == true
+                    fwrite(ResSaveFileID{i},reshape(Residual{i},1,[]),'uint8');
+                end
+                if i16 == true
+                    fwrite(ResSaveFileID{i},reshape(Residual{i},1,[]),'uint16');
+                end
+                fclose(ResSaveFileID{i});
+                PlotProgress(i-1,LoadStepsCount-1,'Rotation Progress',50)
+            end      
+        end      
+    else
+        for i = 2:length(Matrix)
+            try
+                MatrixRotated{i} = CropMatrix(Matrix{i,1},min(zShift),max(zShift),zShift(i)); % z-cropping sample so the start of the sample matches up
+            catch
+                fprintf('Shift failed on sample %i\n', i )
+                continue
+            end
+            % Save Rotated Files
+            SaveFile{i} = strcat(SavePath,'\Cropped+Rotated ',Files{i}); % Saving files at the User Selected File Directory with characters 'Cropped+Rotated' added
+            SaveFileID{i} = fopen(SaveFile{i},'w+');
+            if i8 == true
+                fwrite(SaveFileID{i},reshape(uint8(MatrixRotated{i}),1,[]),'uint8');
+            end
+            if i16 == true
+                fwrite(SaveFileID{i},reshape(uint16(MatrixRotated{i}),1,[]),'uint16');
+            end
+            fclose(SaveFileID{i});
+
+            %Calculate Residuals    
+            Residual{i} = ResidualCalculator(MatrixRotated{1},MatrixRotated{i});
+
+            %Save Residual Files
             ResSaveFile{i} = strcat(ResSavePath,'\Residual ',Files{i});  % Saving files at the User Selected File Directory with characters 'Residual' added
             ResSaveFileID{i} = fopen(ResSaveFile{i},'w+');
             if i8 == true
@@ -401,9 +518,10 @@ if ResidualQ == true
                 fwrite(ResSaveFileID{i},reshape(Residual{i},1,[]),'uint16');
             end
             fclose(ResSaveFileID{i});
-            PlotProgress(i-1,LoadStepsCount-1,'Residual Saving Progress',50)
+            PlotProgress(i-1,LoadStepsCount-1,'Rotation Progress',50)
         end
-    end
-end
+     end
+ end
 
-fprintf('Code finished!\nTotal run time %.2f\n', toc(tic_start)); % Display the total time taken
+    
+    
